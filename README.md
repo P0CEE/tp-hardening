@@ -1,66 +1,178 @@
-# TP HARDENING
+# TP HARDENING - Documentation Technique et Fonctionnelle
 
-# Documentation Technique - Audit de Sécurité Linux
+## 1. Documentation Technique
 
-## Documentation Technique
+### Architecture
 
-### Structure du Code
+### Classe ServerHardener
 
-- **ServerHardener** : Classe principale gérant l'audit
-- **Méthodes principales** :
-    - `secure_processes()` : Surveillance processus (psutil)
-    - `secure_users()` : Analyse utilisateurs (pwd, grp)
-    - `secure_file_permissions()` : Vérification permissions
-    - `secure_open_ports()` : Scan ports (psutil.net_connections)
-    - `secure_ssh()` : Audit SSH
-    - `generate_html_report()` : Génération rapport HTML
+- **Initialisation**
+    
+    ```python
+    def __init__(self):
+        self.env = Environment(loader=FileSystemLoader('.'))
+        self.template = self.env.get_template('report_template.html')
+        os.makedirs('output', exist_ok=True)
+    
+    ```
+    
+    - Configuration Jinja2 environnement
+    - Chargement template depuis dossier courant
+    - Création dossier output
 
-### Dépendances
+### Méthodes Détaillées
+
+### collect_process_data()
 
 ```python
-import psutil# Surveillance système
-import pwd# Infos utilisateurs
-import grp# Infos groupes
-import os# Opérations fichiers
-from datetime import datetime
+def collect_process_data(self):
+    processes = []
+    return {
+        'cpu': cpu_processes,# Top 5 CPU
+        'ram': ram_processes# Top 5 RAM
+    }
+
 ```
 
-## Documentation Fonctionnelle
+- Utilise `psutil.process_iter()`
+- Capture: PID, nom, CPU%, RAM%, temps démarrage
+- Trie processus par CPU/RAM
+- Gestion exceptions: NoSuchProcess, AccessDenied
 
-### Fonctionnalités Détaillées
+### collect_user_data()
+
+```python
+def collect_user_data(self):
+    users = []
+    return users
+```
+
+- Utilise `pwd.getpwall()`
+- Filtre shells: /bin/bash, /bin/sh
+- Mappe utilisateurs-groupes via grp
+
+### collect_file_data()
+
+```python
+def collect_file_data(self):
+    files = []
+    critical_files = ["/etc/shadow", ...]
+    return files
+```
+
+- Scan fichiers critiques
+- Utilise `os.stat()` pour permissions
+- Format octal pour permissions
+- Résolution propriétaires via pwd
+
+### collect_port_data()
+
+```python
+def collect_port_data(self):
+    ports = []
+    critical_ports = [22, 80, 443]
+    return ports
+```
+
+- Utilise `psutil.net_connections()`
+- Filtre état LISTEN
+- Résolution processus associés
+
+### collect_sudoers_data()
+
+```python
+def collect_sudoers_data(self):
+    sudoers = []
+    return sudoers
+```
+
+- Double vérification:
+    1. Groupe sudo
+    2. Fichier /etc/sudoers
+- Détection pattern ALL=(ALL:ALL) ALL
+
+### collect_ssh_data()
+
+```python
+def collect_ssh_data(self):
+    settings = []
+    critical_settings = ["PermitRootLogin", ...]
+    return settings
+
+```
+
+- Parse /etc/ssh/sshd_config
+- Focus paramètres sécurité critiques
+- Extraction valeurs configuration
+
+### Génération Rapport
+
+```python
+def generate_report(self):
+    data = {
+        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+```
+
+- Centralisation données collectées
+- Rendu template Jinja2
+- Sortie fichier HTML
+
+## 2. Documentation Fonctionnelle
+
+### Fonctionnalités
 
 1. **Monitoring Processus**
-    - Top 5 processus par CPU/RAM
-    - Infos : PID, nom, %CPU, %RAM
-2. **Gestion Utilisateurs**
+    - Top 5 CPU et RAM
+    - Données: PID, nom, utilisation, temps démarrage
+    - Commande associée
+2. **Audit Utilisateurs**
     - Liste utilisateurs avec shell
     - Groupes associés
-    - Sessions actives et durée
-3. **Sécurité Fichiers**
-    - Vérification fichiers critiques:
-        - /etc/shadow
-        - /etc/passwd
-        - /etc/sudoers
-        - /etc/ssh/sshd_config
-    - Analyse permissions et propriétaires
-4. **Réseau**
-    - Scan ports critiques (22, 80, 443)
-    - Détails services associés
-5. **Configuration SSH**
-    - Paramètres critiques:
-        - PermitRootLogin
-        - PasswordAuthentication
-        - Port
-        - X11Forwarding
+    - Droits sudo et origine
+3. **Sécurité Système**
+    - Fichiers critiques (/etc/shadow, /etc/passwd...)
+    - Ports sensibles (22, 80, 443)
+    - Configuration SSH
+4. **Rapport HTML**
+    - Tables formatées
+    - Styles CSS intégrés
+    - Stockage dans `output/`
 
-### Sortie
+### Prérequis et Installation
 
-- Console : Affichage en temps réel
-- HTML : Rapport formaté avec tables et styles CSS
+```bash
+python3 
+pip install -r requirements.txt
+```
 
 ### Utilisation
 
 ```bash
-pip3 install psutil
-python3 script.py
+python3 hardening.py
+# Rapport généré dans: output/rapport_securite.html
+```
+
+### Droits Requis
+
+- Root/sudo pour:
+    - Accès fichiers système
+    - Scan processus
+    - Analyse ports
+
+### Évolutions Possibles
+
+- Tests sécurité additionnels
+- Formats rapport multiples
+- Corrections automatiques
+- Historique audits
+
+## 4. Structure du Code
+
+```
+hardening/
+├── hardening.py
+├── report_template.html
+├── requirements.txt
+└── output/
 ```

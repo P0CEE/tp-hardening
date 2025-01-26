@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rapport de Sécurité</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        h1 { color: #2c3e50; text-align: center; }
+        h2 { color: #34495e; margin-top: 30px; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f5f5f5; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <h1>Rapport de Sécurité - {{ timestamp }}</h1>
+    
+    <h2>Processus Critiques</h2>
+    <h3>Top 5 CPU</h3>
+    <table>
+        <tr><th>PID</th><th>Nom</th><th>CPU %</th><th>RAM %</th><th>Démarré</th><th>Commande</th></tr>
+        {% for proc in processes.cpu %}
+        <tr>
+            <td>{{ proc.pid }}</td>
+            <td>{{ proc.name }}</td>
+            <td>{{ proc.cpu_percent }}%</td>
+            <td>{{ proc.memory_percent }}%</td>
+            <td>{{ proc.create_time }}</td>
+            <td>{{ proc.command }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    
+    <h3>Top 5 RAM</h3>
+    <table>
+        <tr><th>PID</th><th>Nom</th><th>CPU %</th><th>RAM %</th><th>Démarré</th><th>Commande</th></tr>
+        {% for proc in processes.ram %}
+        <tr>
+            <td>{{ proc.pid }}</td>
+            <td>{{ proc.name }}</td>
+            <td>{{ proc.cpu_percent }}%</td>
+            <td>{{ proc.memory_percent }}%</td>
+            <td>{{ proc.create_time }}</td>
+            <td>{{ proc.command }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Utilisateurs et Shells</h2>
+    <table>
+        <tr><th>Utilisateur</th><th>Shell</th><th>Groupes</th></tr>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.name }}</td>
+            <td>{{ user.shell }}</td>
+            <td>{{ user.groups }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Fichiers Critiques</h2>
+    <table>
+        <tr><th>Fichier</th><th>Permissions</th><th>Propriétaire</th></tr>
+        {% for file in critical_files %}
+        <tr>
+            <td>{{ file.path }}</td>
+            <td>{{ file.permissions }}</td>
+            <td>{{ file.owner }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Ports Ouverts</h2>
+    <table>
+        <tr><th>Port</th><th>Service</th><th>PID</th></tr>
+        {% for port in open_ports %}
+        <tr>
+            <td>{{ port.number }}</td>
+            <td>{{ port.service }}</td>
+            <td>{{ port.pid }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Utilisateurs Sudo</h2>
+    <table>
+        <tr><th>Utilisateur</th><th>Source</th></tr>
+        {% for sudoer in sudoers %}
+        <tr>
+            <td>{{ sudoer.name }}</td>
+            <td>{{ sudoer.type }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Configuration SSH</h2>
+    <table>
+        <tr><th>Paramètre</th><th>Valeur</th></tr>
+        {% for setting in ssh_config %}
+        <tr>
+            <td>{{ setting.param }}</td>
+            <td>{{ setting.value }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

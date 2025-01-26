@@ -3,196 +3,131 @@ import pwd
 import grp
 import os
 from datetime import datetime
+from jinja2 import Environment, FileSystemLoader
 
 class ServerHardener:
-   def secure_processes(self):
-       print("\n=== Top 5 processus par utilisation CPU ===")
-       processes = []
-       for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'username']):
-           try:
-               processes.append(proc.info)
-           except (psutil.NoSuchProcess, psutil.AccessDenied):
-               pass
-       
-       top_5 = sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)[:5]
-       for proc in top_5:
-           print(f"PID: {proc['pid']} | Nom: {proc['name']} | CPU: {proc['cpu_percent']}% | RAM: {round(proc['memory_percent'], 1)}%")
+    def __init__(self):
+        self.env = Environment(loader=FileSystemLoader('.'))
+        self.template = self.env.get_template('report_template.html')
+        os.makedirs('output', exist_ok=True)
+        
+    def collect_process_data(self):
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                process = proc.info
+                process['memory_percent'] = round(process['memory_percent'], 1)
+                p = psutil.Process(process['pid'])
+                process['create_time'] = datetime.fromtimestamp(p.create_time()).strftime('%Y-%m-%d %H:%M')
+                process['command'] = ' '.join(p.cmdline())[:100] if p.cmdline() else 'N/A'
+                processes.append(process)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
 
-   def secure_users(self):
-       print("\n=== Utilisateurs et shells ===")
-       for user in pwd.getpwall():
-           if '/bin/bash' in user.pw_shell or '/bin/sh' in user.pw_shell:
-               groups = [g.gr_name for g in grp.getgrall() if user.pw_name in g.gr_mem]
-               print(f"Utilisateur: {user.pw_name} | Shell: {user.pw_shell} | Groupes: {', '.join(groups)}")
-       
-       print("\n=== Connexions actives ===")
-       for user in psutil.users():
-           started = datetime.fromtimestamp(user.started).strftime('%Y-%m-%d %H:%M')
-           print(f"Utilisateur: {user.name} | Terminal: {user.terminal} | Démarré: {started}")
+        cpu_processes = sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)[:5]
+        ram_processes = sorted(processes, key=lambda x: x['memory_percent'], reverse=True)[:5]
 
-   def secure_file_permissions(self):
-       print("\n=== Permissions fichiers critiques ===")
-       critical_files = ["/etc/shadow", "/etc/passwd", "/etc/sudoers", "/etc/ssh/sshd_config"]
-       for file in critical_files:
-           try:
-               stat = os.stat(file)
-               print(f"{file}: {oct(stat.st_mode)[-3:]} | Proprio: {pwd.getpwuid(stat.st_uid).pw_name}")
-           except:
-               continue
+        return {
+            'cpu': cpu_processes,
+            'ram': ram_processes
+        }
 
-   def secure_open_ports(self):
-       print("\n=== Ports ouverts critiques ===")
-       critical_ports = [22, 80, 443]  
-       for conn in psutil.net_connections():
-           if conn.status == 'LISTEN' and conn.laddr.port in critical_ports:
-               try:
-                   proc = psutil.Process(conn.pid)
-                   print(f"Port: {conn.laddr.port} | Service: {proc.name()} | PID: {conn.pid}")
-               except:
-                   continue
+    def collect_user_data(self):
+        users = []
+        for user in pwd.getpwall():
+            if '/bin/bash' in user.pw_shell or '/bin/sh' in user.pw_shell:
+                groups = [g.gr_name for g in grp.getgrall() if user.pw_name in g.gr_mem]
+                users.append({
+                    'name': user.pw_name,
+                    'shell': user.pw_shell,
+                    'groups': ', '.join(groups)
+                })
+        return users
 
-   def secure_sudoers(self):
-       print("\n=== Utilisateurs sudo ===")
-       try:
-           sudo_group = grp.getgrnam('sudo')
-           for user in sudo_group.gr_mem:
-               print(f"Utilisateur sudo: {user}")
-       except:
-           print("Groupe sudo non trouvé")
+    def collect_file_data(self):
+        files = []
+        critical_files = ["/etc/shadow", "/etc/passwd", "/etc/sudoers", "/etc/ssh/sshd_config"]
+        for file in critical_files:
+            try:
+                stat = os.stat(file)
+                files.append({
+                    'path': file,
+                    'permissions': oct(stat.st_mode)[-3:],
+                    'owner': pwd.getpwuid(stat.st_uid).pw_name
+                })
+            except:
+                continue
+        return files
 
-   def secure_ssh(self):
-       print("\n=== Configuration SSH ===")
-       ssh_config = "/etc/ssh/sshd_config"
-       critical_settings = ["PermitRootLogin", "PasswordAuthentication", "Port", "X11Forwarding"]
-       
-       try:
-           with open(ssh_config, 'r') as f:
-               content = f.readlines()
-               
-           for line in content:
-               for setting in critical_settings:
-                   if line.strip().startswith(setting):
-                       print(f"{line.strip()}")
-       except:
-           print("Impossible d'accéder à la configuration SSH")
+    def collect_port_data(self):
+        ports = []
+        critical_ports = [22, 80, 443]
+        for conn in psutil.net_connections():
+            if conn.status == 'LISTEN' and conn.laddr.port in critical_ports:
+                try:
+                    proc = psutil.Process(conn.pid)
+                    ports.append({
+                        'number': conn.laddr.port,
+                        'service': proc.name(),
+                        'pid': conn.pid
+                    })
+                except:
+                    continue
+        return ports
+    
+    def collect_sudoers_data(self):
+        sudoers = []
+        try:
+            sudo_group = grp.getgrnam('sudo')
+            for user in sudo_group.gr_mem:
+                sudoers.append({'name': user, 'type': 'group_sudo'})
+            
+            with open('/etc/sudoers', 'r') as f:
+                for line in f:
+                    if line.strip() and not line.startswith('#'):
+                        if 'ALL=(ALL:ALL) ALL' in line:
+                            user = line.split()[0]
+                            if user not in [s['name'] for s in sudoers]:
+                                sudoers.append({'name': user, 'type': 'sudoers_file'})
+        except:
+            pass
+        return sudoers
 
-   def generate_html_report(self):
-       html = f"""
-       <html>
-       <head>
-           <title>Rapport de Sécurité</title>
-           <style>
-               body {{ font-family: Arial; margin: 40px; }}
-               h1 {{ color: #2c3e50; text-align: center; }}
-               h2 {{ color: #34495e; margin-top: 30px; }}
-               table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
-               th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-               th {{ background-color: #f5f5f5; }}
-               tr:nth-child(even) {{ background-color: #f9f9f9; }}
-           </style>
-       </head>
-       <body>
-           <h1>Rapport de Sécurité - {datetime.now().strftime("%Y-%m-%d %H:%M")}</h1>
-           
-           <h2>Processus Critiques</h2>
-           <table>
-               <tr><th>PID</th><th>Nom</th><th>CPU %</th><th>RAM %</th></tr>
-       """
+    def collect_ssh_data(self):
+        settings = []
+        critical_settings = ["PermitRootLogin", "PasswordAuthentication", "Port", "X11Forwarding"]
+        try:
+            with open("/etc/ssh/sshd_config", 'r') as f:
+                for line in f:
+                    for setting in critical_settings:
+                        if line.strip().startswith(setting):
+                            param, value = line.strip().split(None, 1)
+                            settings.append({'param': param, 'value': value})
+        except:
+            pass
+        return settings
 
-       processes = []
-       for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
-           try:
-               processes.append(proc.info)
-           except:
-               continue
-       
-       top_5 = sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)[:5]
-       for proc in top_5:
-           html += f"<tr><td>{proc['pid']}</td><td>{proc['name']}</td><td>{proc['cpu_percent']}%</td><td>{round(proc['memory_percent'], 1)}%</td></tr>"
+    def generate_report(self):
+        data = {
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M"),
+            'processes': self.collect_process_data(),
+            'users': self.collect_user_data(),
+            'critical_files': self.collect_file_data(),
+            'open_ports': self.collect_port_data(),
+            'sudoers': self.collect_sudoers_data(),
+            'ssh_config': self.collect_ssh_data(),
+        }
+        
+        html_content = self.template.render(**data)
+        output_path = os.path.join('output', 'rapport_securite.html')
+        with open(output_path, 'w') as f:
+            f.write(html_content)
+        print(f"Rapport HTML généré dans {output_path}")
 
-       html += """
-           </table>
-           <h2>Utilisateurs et Shells</h2>
-           <table>
-               <tr><th>Utilisateur</th><th>Shell</th><th>Groupes</th></tr>
-       """
-       
-       for user in pwd.getpwall():
-           if '/bin/bash' in user.pw_shell or '/bin/sh' in user.pw_shell:
-               groups = [g.gr_name for g in grp.getgrall() if user.pw_name in g.gr_mem]
-               html += f"<tr><td>{user.pw_name}</td><td>{user.pw_shell}</td><td>{', '.join(groups)}</td></tr>"
-
-       html += """
-           </table>
-           <h2>Fichiers Critiques</h2>
-           <table>
-               <tr><th>Fichier</th><th>Permissions</th><th>Propriétaire</th></tr>
-       """
-       
-       critical_files = ["/etc/shadow", "/etc/passwd", "/etc/sudoers", "/etc/ssh/sshd_config"]
-       for file in critical_files:
-           try:
-               stat = os.stat(file)
-               html += f"<tr><td>{file}</td><td>{oct(stat.st_mode)[-3:]}</td><td>{pwd.getpwuid(stat.st_uid).pw_name}</td></tr>"
-           except:
-               continue
-
-       html += """
-           </table>
-           <h2>Ports Ouverts</h2>
-           <table>
-               <tr><th>Port</th><th>Service</th><th>PID</th></tr>
-       """
-       
-       critical_ports = [22, 80, 443]
-       for conn in psutil.net_connections():
-           if conn.status == 'LISTEN' and conn.laddr.port in critical_ports:
-               try:
-                   proc = psutil.Process(conn.pid)
-                   html += f"<tr><td>{conn.laddr.port}</td><td>{proc.name()}</td><td>{conn.pid}</td></tr>"
-               except:
-                   continue
-
-       html += """
-           </table>
-           <h2>Configuration SSH</h2>
-           <table>
-               <tr><th>Paramètre</th><th>Valeur</th></tr>
-       """
-
-       ssh_config = "/etc/ssh/sshd_config"
-       critical_settings = ["PermitRootLogin", "PasswordAuthentication", "Port", "X11Forwarding"]
-       try:
-           with open(ssh_config, 'r') as f:
-               content = f.readlines()
-           for line in content:
-               for setting in critical_settings:
-                   if line.strip().startswith(setting):
-                       param, value = line.strip().split(None, 1)
-                       html += f"<tr><td>{param}</td><td>{value}</td></tr>"
-       except:
-           html += "<tr><td colspan='2'>Impossible d'accéder à la configuration SSH</td></tr>"
-
-       html += """
-           </table>
-       </body>
-       </html>
-       """
-
-       with open('rapport_securite.html', 'w') as f:
-           f.write(html)
-           print("\nRapport HTML généré dans 'rapport_securite.html'")
-
-   def run_hardening(self):
-       print(f"=== Audit sécurité - {datetime.now()} ===")
-       self.secure_processes()
-       self.secure_users()
-       self.secure_file_permissions()
-       self.secure_open_ports()
-       self.secure_sudoers()
-       self.secure_ssh()
-       self.generate_html_report()
+    def run_hardening(self):
+        print(f"=== Audit sécurité - {datetime.now()} ===")
+        self.generate_report()
 
 if __name__ == "__main__":
-   hardener = ServerHardener()
-   hardener.run_hardening()
+    hardener = ServerHardener()
+    hardener.run_hardening()
