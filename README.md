@@ -160,13 +160,6 @@ python3 hardening.py
     - Scan processus
     - Analyse ports
 
-### Évolutions Possibles
-
-- Tests sécurité additionnels
-- Formats rapport multiples
-- Corrections automatiques
-- Historique audits
-
 ## 4. Structure du Code
 
 ```
